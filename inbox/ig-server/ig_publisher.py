@@ -882,6 +882,8 @@ def cmd_check(ctx):
             print('  токен Instagram принят: @%s (%s)' % (me.get('username'), me.get('account_type')))
         except ApiError as error:
             print('  ТОКЕН INSTAGRAM: %s' % error)
+            if error.code == 190 or error.status in (400, 401):
+                print('    в config.json: %s' % token_hint(st.get('token') or acc.get('token')))
             bad += 1
         try:
             g = github_cfg(ctx, acc)
@@ -1005,6 +1007,22 @@ def clean_token(value):
     return str(value or '').strip().strip('"\'').strip()
 
 
+def token_hint(value):
+    """Безопасная примета токена для экрана: первые 4 символа, длина и признаки неудачной вставки. Остального не показываем."""
+    v = str(value or '')
+    notes = []
+    for mark in ('IGAA', 'IGQ', 'EAA', 'github_pat_', 'ghp_'):
+        if v.count(mark) >= 2:
+            notes.append('«%s» встречается %d раза — похоже, склеено несколько токенов' % (mark, v.count(mark)))
+            break
+    half = len(v) // 2
+    if len(v) % 2 == 0 and half and v[:half] == v[half:]:
+        notes.append('вторая половина повторяет первую — токен вставлен дважды')
+    if re.search(r'[^A-Za-z0-9_\-.=|%]', v):
+        notes.append('внутри есть лишние символы (пробелы, кавычки, переносы)')
+    return 'токен начинается с «%s…», длина %d%s' % (v[:4], len(v), ('; ' + '; '.join(notes)) if notes else '')
+
+
 def cmd_set_token(base_dir, account_name):
     """Записывает токены в config.json без ручной правки файла: вставили, Enter. На экране остаётся только длина."""
     path = os.path.join(base_dir, 'config.json')
@@ -1033,7 +1051,7 @@ def cmd_set_token(base_dir, account_name):
             continue
         holder[key] = value
         changed += 1
-        print('  записал токен (%d символов)' % len(value))
+        print('  записал: %s' % token_hint(value))
     if changed:
         save_json(path, cfg)
     print('Готово. Теперь: python ig_publisher.py check')

@@ -489,7 +489,7 @@ def api(ctx, method, path, token, params=None, timeout=60):
 
 def ensure_token(ctx, acc, st):
     """Токен из config.json; после продления живёт в state.json. Продлеваем раз в 30 дней."""
-    seed = str(acc.get('token') or '').strip()
+    seed = dedupe_token(str(acc.get('token') or '').strip().strip('"\''))
     if not seed or seed.startswith('ВСТАВЬТЕ'):
         raise ApiError('в config.json не вставлен токен Instagram аккаунта «%s»' % acc['name'])
     if st.get('seed') != seed:                      # токен в config поменяли — он главнее
@@ -533,6 +533,7 @@ def github_cfg(ctx, acc):
     g.update(acc.get('github') or {})
     g.setdefault('branch', 'main')
     g['dir'] = str(acc.get('github_dir') or g.get('dir') or '').strip('/')
+    g['token'] = dedupe_token(str(g.get('token') or '').strip().strip('"\''))
     for key in ('token', 'owner', 'repo'):
         if not str(g.get(key) or '').strip() or str(g[key]).startswith('ВСТАВЬТЕ'):
             raise ApiError('в config.json не заполнено github.%s' % key)
@@ -1003,8 +1004,17 @@ def ask_secret(prompt):
         return input(prompt)
 
 
+def dedupe_token(value):
+    """Токен, вставленный 2–5 раз подряд (бывает при вставке в консоль), сводим к одной копии. Настоящий токен таким не бывает."""
+    v = str(value or '').strip()
+    for k in (2, 3, 4, 5):
+        if len(v) % k == 0 and len(v) // k >= 30 and v == v[:len(v) // k] * k:
+            return v[:len(v) // k]
+    return v
+
+
 def clean_token(value):
-    return str(value or '').strip().strip('"\'').strip()
+    return dedupe_token(str(value or '').strip().strip('"\'').strip())
 
 
 def token_hint(value):
@@ -1012,12 +1022,12 @@ def token_hint(value):
     v = str(value or '')
     notes = []
     for mark in ('IGAA', 'IGQ', 'EAA', 'github_pat_', 'ghp_'):
-        if v.count(mark) >= 2:
+        if dedupe_token(v) == v and v.count(mark) >= 2:
             notes.append('«%s» встречается %d раза — похоже, склеено несколько токенов' % (mark, v.count(mark)))
             break
-    half = len(v) // 2
-    if len(v) % 2 == 0 and half and v[:half] == v[half:]:
-        notes.append('вторая половина повторяет первую — токен вставлен дважды')
+    one = dedupe_token(v)
+    if one != v:
+        notes.append('токен вставлен подряд %d раза — программа использует одну копию (%d символов)' % (len(v) // len(one), len(one)))
     if re.search(r'[^A-Za-z0-9_\-.=|%]', v):
         notes.append('внутри есть лишние символы (пробелы, кавычки, переносы)')
     return 'токен начинается с «%s…», длина %d%s' % (v[:4], len(v), ('; ' + '; '.join(notes)) if notes else '')

@@ -27,11 +27,13 @@ GitHub (быстрым серверным каналом), просит Instagra
   publish-now АККАУНТ --yes   выложить следующий ролик сейчас (настоящая публикация)
   mark-published ИМЯ.mp4 [--account АККАУНТ]   считать ролик уже вышедшим
   forget ИМЯ.mp4 [--account АККАУНТ]           вернуть ролик в очередь
+  set-token [АККАУНТ]     спросить токены Instagram и GitHub (ввод скрыт) и записать их в config.json
   set-proxy               спросить адрес прокси для Instagram и записать его в config.json (пустая строка — выключить)
   fetch-inbox АККАУНТ [--from inbox]           скачать с GitHub (из папки inbox репозитория) ролики и подписи в папку аккаунта
 """
 import argparse
 import base64
+import getpass
 import http.client
 import json
 import os
@@ -991,6 +993,53 @@ def cmd_set_proxy(base_dir):
     return 0
 
 
+def ask_secret(prompt):
+    """Секрет вводится скрыто (не остаётся на экране и в истории окна). Если консоль скрытый ввод не умеет — обычный."""
+    try:
+        return getpass.getpass(prompt)
+    except Exception:  # noqa: BLE001
+        return input(prompt)
+
+
+def clean_token(value):
+    return str(value or '').strip().strip('"\'').strip()
+
+
+def cmd_set_token(base_dir, account_name):
+    """Записывает токены в config.json без ручной правки файла: вставили, Enter. На экране остаётся только длина."""
+    path = os.path.join(base_dir, 'config.json')
+    if not os.path.exists(path):
+        example = os.path.join(base_dir, 'config.example.json')
+        if not os.path.exists(example):
+            raise SystemExit('Нет ни config.json, ни config.example.json рядом со скриптом.')
+        save_json(path, load_json(example, {}))
+    cfg = load_json(path, {})
+    accounts = cfg.get('accounts', [])
+    acc = None
+    for item in accounts:
+        if not account_name or item.get('name') == account_name:
+            acc = item
+            break
+    if acc is None:
+        raise SystemExit('Аккаунт «%s» не найден в config.json' % account_name)
+    changed = 0
+    for label, holder, key in (('Instagram аккаунта «%s»' % acc['name'], acc, 'token'), ('GitHub (общий для всех аккаунтов)', cfg.setdefault('github', {}), 'token')):
+        value = clean_token(ask_secret('Токен %s — вставьте и нажмите Enter (пусто — не менять): ' % label))
+        if not value:
+            print('  не менял')
+            continue
+        if re.search(r'\s', value) or len(value) < 30:
+            print('  Это не похоже на токен (пробелы или слишком короткий). Скопируйте его целиком, одной строкой. Не записал.')
+            continue
+        holder[key] = value
+        changed += 1
+        print('  записал токен (%d символов)' % len(value))
+    if changed:
+        save_json(path, cfg)
+    print('Готово. Теперь: python ig_publisher.py check')
+    return 0
+
+
 def find_account(ctx, name):
     accounts = ctx.cfg.get('accounts', [])
     if name:
@@ -1005,7 +1054,7 @@ def find_account(ctx, name):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Серверный публикатор Reels для Instagram')
-    parser.add_argument('command', nargs='?', default='run', choices=['run', 'status', 'check', 'publish-now', 'mark-published', 'forget', 'fetch-inbox', 'set-proxy'])
+    parser.add_argument('command', nargs='?', default='run', choices=['run', 'status', 'check', 'publish-now', 'mark-published', 'forget', 'fetch-inbox', 'set-proxy', 'set-token'])
     parser.add_argument('target', nargs='*')
     parser.add_argument('--account', default='')
     parser.add_argument('--yes', action='store_true')
@@ -1020,6 +1069,8 @@ def main(argv=None):
             pass
     if args.command == 'set-proxy':
         return cmd_set_proxy(args.dir)
+    if args.command == 'set-token':
+        return cmd_set_token(args.dir, args.target[0] if args.target else args.account)
     ctx = Ctx(args.dir)
 
     if args.command == 'status':

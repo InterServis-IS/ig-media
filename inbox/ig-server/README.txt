@@ -24,8 +24,9 @@
    выполните на сервере: python C:\ig-publisher\ig_publisher.py fetch-inbox saudiago
    Сервер скачает всё сам; уже скачанное пропускает, оборванную загрузку можно просто повторить.
 3. powershell -ExecutionPolicy Bypass -File C:\ig-publisher\install.ps1
-   Первый запуск создаст config.json и остановится: откройте его, вставьте токены вместо слов
-   ВСТАВЬТЕ…, сохраните в UTF-8 и запустите install.ps1 ещё раз. Он проверит доступы (ничего не
+   Первый запуск создаст config.json и остановится: вставьте токены командой
+   python ig_publisher.py set-token saudiago (или впишите их вместо слов ВСТАВЬТЕ… в config.json, в UTF-8)
+   и запустите install.ps1 ещё раз. Он проверит доступы (ничего не
    публикуя) и поставит задачу «IgPublisher» в Планировщик: раз в минуту, без окна, от SYSTEM.
 4. В приложении «Диалог Деск» ВЫКЛЮЧИТЕ расписание Instagram для этого аккаунта (иначе
    публиковать будут и приложение, и сервер). Страховка от дубля есть: сервер не выкладывает
@@ -39,6 +40,7 @@
   python ig_publisher.py publish-now saudiago --yes выложить следующий ролик СЕЙЧАС (настоящая публикация)
   python ig_publisher.py mark-published 01_bezviz.mp4 --account saudiago   считать ролик вышедшим
   python ig_publisher.py forget 01_bezviz.mp4 --account saudiago           вернуть ролик в очередь
+  python ig_publisher.py set-token saudiago         вставить токены Instagram и GitHub (ввод скрыт) — без правки файла
   python ig_publisher.py set-proxy                  записать адрес прокси для Instagram в config.json
   python ig_publisher.py fetch-inbox saudiago       скачать ролики и подписи с GitHub (папка inbox) в папку аккаунта
 Журнал: publisher.log. Состояние: state.json (что вышло, попытки, токен после продления).

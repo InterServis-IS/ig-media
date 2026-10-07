@@ -39,12 +39,13 @@
   python ig_publisher.py publish-now saudiago --yes выложить следующий ролик СЕЙЧАС (настоящая публикация)
   python ig_publisher.py mark-published 01_bezviz.mp4 --account saudiago   считать ролик вышедшим
   python ig_publisher.py forget 01_bezviz.mp4 --account saudiago           вернуть ролик в очередь
+  python ig_publisher.py set-proxy                  записать адрес прокси для Instagram в config.json
   python ig_publisher.py fetch-inbox saudiago       скачать ролики и подписи с GitHub (папка inbox) в папку аккаунта
 Журнал: publisher.log. Состояние: state.json (что вышло, попытки, токен после продления).
 
 ЕСЛИ INSTAGRAM ИЗ РОССИИ НЕ ДОСТУПЕН
 Команда check покажет «НЕ ДОСТУПЕН» у Instagram API. Тогда нужен прокси ТОЛЬКО для Instagram:
-в config.json в поле "proxy" укажите http://логин:пароль@адрес:порт или socks5://логин:пароль@адрес:порт.
+выполните python ig_publisher.py set-proxy и вставьте адрес (или впишите его в config.json в поле "proxy") в виде http://логин:пароль@адрес:порт или socks5://логин:пароль@адрес:порт.
 Через прокси пойдут только короткие запросы к graph.instagram.com (токен, контейнер, публикация);
 ролики идут на GitHub напрямую. Соединение с Instagram остаётся зашифрованным насквозь:
 прокси видит только адрес, но не токен. Нужен прокси не из России.

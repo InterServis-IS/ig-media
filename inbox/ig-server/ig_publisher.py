@@ -27,6 +27,7 @@ GitHub (быстрым серверным каналом), просит Instagra
   publish-now АККАУНТ --yes   выложить следующий ролик сейчас (настоящая публикация)
   mark-published ИМЯ.mp4 [--account АККАУНТ]   считать ролик уже вышедшим
   forget ИМЯ.mp4 [--account АККАУНТ]           вернуть ролик в очередь
+  set-proxy               спросить адрес прокси для Instagram и записать его в config.json (пустая строка — выключить)
   fetch-inbox АККАУНТ [--from inbox]           скачать с GitHub (из папки inbox репозитория) ролики и подписи в папку аккаунта
 """
 import argparse
@@ -174,6 +175,27 @@ class _SocksHTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(self.cls, req)
 
 
+class _ExplicitProxyHandler(urllib.request.ProxyHandler):
+    """Прокси, заданный в config.json, действует всегда. Стандартный обработчик Python вдобавок смотрит на
+    no_proxy из окружения и «исключения» из настроек Windows и мог бы молча пойти мимо прокси."""
+
+    def proxy_open(self, req, proxy, type):
+        parse = getattr(urllib.request, '_parse_proxy', None)
+        if parse is None:
+            return urllib.request.ProxyHandler.proxy_open(self, req, proxy, type)
+        orig_type = req.type
+        proxy_type, user, password, hostport = parse(proxy)
+        if proxy_type is None:
+            proxy_type = orig_type
+        if user and password:
+            raw = '%s:%s' % (urllib.parse.unquote(user), urllib.parse.unquote(password))
+            req.add_header('Proxy-authorization', 'Basic ' + base64.b64encode(raw.encode('utf-8')).decode('ascii'))
+        req.set_proxy(urllib.parse.unquote(hostport), proxy_type)
+        if orig_type == proxy_type or orig_type == 'https':
+            return None
+        return self.parent.open(req, timeout=req.timeout)
+
+
 class Ctx(object):
     """Всё, что нужно заходу: настройки, состояние, часы и журнал."""
 
@@ -235,7 +257,7 @@ class Ctx(object):
             if use and proxy.lower().startswith(('socks5://', 'socks5h://')):
                 handlers = [urllib.request.ProxyHandler({}), _SocksHTTPHandler(proxy), _SocksHTTPSHandler(proxy)]
             elif use:
-                handlers = [urllib.request.ProxyHandler({'http': proxy, 'https': proxy})]
+                handlers = [_ExplicitProxyHandler({'http': proxy, 'https': proxy})]
             else:
                 handlers = [urllib.request.ProxyHandler({})]
             self._openers[kind] = urllib.request.build_opener(*handlers)
@@ -839,7 +861,9 @@ def reach(ctx, kind, url, label):
 
 def cmd_check(ctx):
     bad = 0
-    print('Доступность адресов с этого сервера%s:' % (' (Instagram — через прокси)' if str(ctx.cfg.get('proxy') or '').strip() else ''))
+    proxy = str(ctx.cfg.get('proxy') or '').strip()
+    where = urllib.parse.urlparse(proxy if '://' in proxy else 'http://' + proxy) if proxy else None
+    print('Доступность адресов с этого сервера%s:' % ((' (Instagram — через прокси %s:%s)' % (where.hostname, where.port)) if where else ''))
     if not reach(ctx, 'instagram', ctx.api_host + '/', 'Instagram API'):
         bad += 1
         print('    → из России он может быть закрыт. Нужен прокси (поле proxy в config.json) или запуск за границей.')
@@ -943,6 +967,30 @@ def cmd_fetch_inbox(ctx, acc, folder):
     return 1 if failed else 0
 
 
+def cmd_set_proxy(base_dir):
+    """Записывает адрес прокси в config.json, не заставляя править файл руками. Пароль на экран не выводится."""
+    path = os.path.join(base_dir, 'config.json')
+    if not os.path.exists(path):
+        example = os.path.join(base_dir, 'config.example.json')
+        if not os.path.exists(example):
+            raise SystemExit('Нет ни config.json, ни config.example.json рядом со скриптом.')
+        save_json(path, load_json(example, {}))
+    cfg = load_json(path, {})
+    value = input('Адрес прокси (http://логин:пароль@адрес:порт или socks5://...), пустая строка — выключить: ').strip()
+    if value and not value.lower().startswith(('http://', 'https://', 'socks5://', 'socks5h://')):
+        print('Адрес должен начинаться с http://, https:// или socks5://. Ничего не записано.')
+        return 1
+    cfg['proxy'] = value
+    save_json(path, cfg)
+    if value:
+        parsed = urllib.parse.urlparse(value)
+        print('Записано: прокси %s://%s:%s%s. Только запросы к Instagram пойдут через него.' % (
+            parsed.scheme, parsed.hostname, parsed.port, ' (с логином и паролем)' if parsed.username else ''))
+    else:
+        print('Прокси выключен.')
+    return 0
+
+
 def find_account(ctx, name):
     accounts = ctx.cfg.get('accounts', [])
     if name:
@@ -957,7 +1005,7 @@ def find_account(ctx, name):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Серверный публикатор Reels для Instagram')
-    parser.add_argument('command', nargs='?', default='run', choices=['run', 'status', 'check', 'publish-now', 'mark-published', 'forget', 'fetch-inbox'])
+    parser.add_argument('command', nargs='?', default='run', choices=['run', 'status', 'check', 'publish-now', 'mark-published', 'forget', 'fetch-inbox', 'set-proxy'])
     parser.add_argument('target', nargs='*')
     parser.add_argument('--account', default='')
     parser.add_argument('--yes', action='store_true')
@@ -970,6 +1018,8 @@ def main(argv=None):
             stream.reconfigure(encoding='utf-8', errors='replace')
         except (AttributeError, ValueError):
             pass
+    if args.command == 'set-proxy':
+        return cmd_set_proxy(args.dir)
     ctx = Ctx(args.dir)
 
     if args.command == 'status':
